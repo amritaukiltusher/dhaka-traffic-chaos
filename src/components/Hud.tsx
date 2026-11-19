@@ -29,19 +29,9 @@ const WEATHER_ICON = { night: '🌙', dusk: '🌇', rain: '🌧️' } as const;
 export default function Hud({ hud }: { hud: HudState }) {
   const { t, lang } = useLang();
   const batteryColor = hud.battery > 50 ? '#2fd27a' : hud.battery > 25 ? '#ffc21a' : '#ff4d3d';
-  const gapPct = (hud.gap / 30) * 100;
-  const gapColor = hud.gap > 14 ? '#4cc9ff' : hud.gap > 8 ? '#ffc21a' : '#ff4d3d';
-  const danger = hud.gap < 12;
 
   return (
     <>
-      {danger && (
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 motion-safe:animate-pulse"
-          style={{ boxShadow: `inset 0 0 ${60 + (12 - hud.gap) * 8}px rgba(255,40,40,${0.25 + (12 - hud.gap) * 0.03})` }}
-        />
-      )}
       <div className="pointer-events-none absolute left-2 top-2 w-[min(15rem,56%)] space-y-1.5 rounded-xl bg-black/55 p-2.5 text-white backdrop-blur-sm sm:left-3 sm:top-3">
         <div className="flex items-baseline justify-between gap-2">
           <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-300">{t('hud.score')}</span>
@@ -57,7 +47,6 @@ export default function Hud({ hud }: { hud: HudState }) {
           </span>
         </div>
         <Bar value={hud.battery} color={batteryColor} label={t('hud.battery')} valueText={`${digits(Math.round(hud.battery), lang)}%`} />
-        <Bar value={gapPct} color={gapColor} label={t('hud.pursuit')} valueText={hud.gap < 3 ? '!!!' : `${digits(Math.round(hud.gap), lang)} ${lang === 'bn' ? 'মি' : 'm'}`} />
         <div className="flex items-center justify-between text-[11px] text-slate-200">
           <span>
             {t('hud.speed')}: <b className="text-white">{digits(hud.speed, lang)}</b> {t('hud.kmh')}

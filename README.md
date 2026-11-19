@@ -88,3 +88,7 @@ Glowing street lamps and tail lights, rain splashes on the road, smoke and spark
 ## Traffic rules
 
 Every moving vehicle keeps a safe gap to the one ahead (no more driving through each other) and stops at the signal gantries on red (or yellow when it can stop in time). Signal cycle: 6 s green, 1 s yellow, 3 s red. The road carries fewer vehicles than before. Open the site with `?debug` to expose the engine as `window.__dtc` for testing.
+
+## Max graphics (High quality)
+
+HDR pipeline with 4x MSAA, bloom, ACES filmic tone mapping, 2048px soft shadows, up to 2x pixel ratio and an environment-lit glossy auto body. Low quality keeps the plain renderer for slower phones. The Angry Bus chaser was removed from the game.

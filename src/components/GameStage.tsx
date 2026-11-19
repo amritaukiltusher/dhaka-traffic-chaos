@@ -552,7 +552,7 @@ export default function GameStage({ startSignal }: { startSignal: number }) {
         <div className="absolute inset-0 z-20 overflow-y-auto bg-black/80 p-3 sm:p-5" role="dialog" aria-modal="true" aria-label={t('res.title')}>
           <div className="mx-auto w-full max-w-lg rounded-2xl border border-line bg-panel p-4 sm:p-6">
             <h2 className="text-center font-display text-3xl text-sun">{t('res.title')}</h2>
-            <p className="text-center text-sm text-slate-300">{result.reason === 'battery' ? t('res.reasonBattery') : t('res.reasonCaught')}</p>
+            <p className="text-center text-sm text-slate-300">{result.reason === 'battery' ? t('res.reasonBattery') : t('res.reasonBattery')}</p>
             {isBest && <p className="mt-2 text-center font-semibold text-leaf">★ {t('res.newBest')}</p>}
 
             <label htmlFor="res-nick" className="mt-3 block text-xs font-semibold text-slate-300">

@@ -44,8 +44,8 @@ export const EVENT_MESSAGES: Record<EventType, Pool> = {
     en: ['Battery is draining — find a charging spot!', 'Running out of power — look for ⚡!']
   },
   pursuit: {
-    bn: ['ক্ষ্যাপা বাস পেছনে! জোরে চালান!', 'পেছনে গর্জন! বাসটা রেগে আছে!'],
-    en: ['The Angry Bus is right behind you! Go faster!', 'A roar behind you! The bus is furious!']
+    bn: ['সামনে জ্যাম! সাবধান!', 'রাস্তা ঠাসা! চোখ খোলা রাখুন!'],
+    en: ['Jam ahead! Careful!', 'The road is packed! Eyes open!']
   },
   chai: {
     bn: ['চা-ব্রেক টার্বো! ৭ সেকেন্ড ব্যাটারি-ফ্রি ছুট!', 'এক কাপ চায়ে ইঞ্জিন গরম!', 'চা খেলে গাড়ি আরও জোরে চলে (গুজব)!'],
@@ -161,7 +161,7 @@ const OVER_POOLS: Record<GameResult['reason'] | 'generic', Headline[]> = {
     { bn: '"আরেকটু হলেই পৌঁছে যেতাম" — ব্যাটারি-হীন চালকের আক্ষেপ', en: '"I was almost there" — the powerless driver laments' }
   ],
   caught: [
-    { bn: 'ক্ষ্যাপা বাস ধরে ফেলল! চালককে চা-বিরতিতে বাধ্য করা হলো', en: 'The Angry Bus caught up! Driver forced into a tea break' },
+    { bn: 'জ্যামে আটকে চালককে চা-বিরতিতে বাধ্য করা হলো', en: 'Stuck in the jam, driver forced into a tea break' },
     { bn: 'পেছনের গর্জন থামল, সামনে শুধু হাসি-মুখ বাস', en: 'The roar behind stopped — only a smiling bus remained' },
     { bn: 'বাসের সঙ্গে দৌড়ে হার, তবে রিকশার মান বেঁচে গেল', en: 'Lost the race to the bus, but the auto kept its dignity' }
   ],
@@ -208,7 +208,7 @@ export const SOUND_BOMB: BombLine[] = [
   { bn: 'ধাক্কাটা কিন্তু ফ্রি ছিল!', en: 'That bump was free of charge!', sfx: 'boing' },
   { bn: 'চলুন, আগে এক কাপ চা খাই!', en: 'Come on, tea first!', sfx: 'quack' },
   { bn: 'এ কী কাণ্ড! এ কী কাণ্ড!', en: 'What a scene! What a scene!', sfx: 'boing' },
-  { bn: 'বাঁচাও! ক্ষ্যাপা বাস আসছে!', en: 'Help! The Angry Bus is coming!', sfx: 'whistle' },
+  { bn: 'বাঁচাও! সামনে মহা জ্যাম!', en: 'Help! A giant jam ahead!', sfx: 'whistle' },
   { bn: 'দাদা, ইনস্যুরেন্স আছে তো?', en: 'Brother, you do have insurance, right?', sfx: 'bonk' },
   { bn: 'ঢিশুম! আজ ফুল ড্রামা!', en: 'Boom! Full drama today!', sfx: 'bonk' },
   { bn: 'লাইন মানুন, লাইন মানুন!', en: 'Follow the lane, follow the lane!', sfx: 'squeak' },

@@ -1,5 +1,10 @@
 import * as THREE from 'three';
 import type { InputState } from './input';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { Fx } from './fx';
 import type { SoundEngine } from './audio';
 import type { Difficulty, Quality } from '../lib/storage';
@@ -396,7 +401,7 @@ class Factory {
   rickshaw() {
     const grp = new THREE.Group();
     const wheels: THREE.Object3D[] = [];
-    const body = this.keep('player-body', new THREE.MeshLambertMaterial({ color: 0x237d33 }));
+    const body = this.keep('player-body', new THREE.MeshStandardMaterial({ color: 0x237d33, roughness: 0.32, metalness: 0.28, envMapIntensity: 0.9 }));
     const olive = this.lam(0x5f6a4d);
     const dark = this.lam(0x1a1c22);
     const L = this.vehicleLabels();
@@ -646,7 +651,6 @@ export class DriveGame {
   private playerWheels: THREE.Object3D[];
   private shieldMesh: THREE.Mesh;
   private headLight: THREE.PointLight;
-  private chaser: { grp: THREE.Group; l1: THREE.Mesh; l2: THREE.Mesh };
   private roadTex: THREE.CanvasTexture;
   private segments: Segment[] = [];
   private lampMats: { red: THREE.MeshBasicMaterial; yellow: THREE.MeshBasicMaterial; green: THREE.MeshBasicMaterial };
@@ -702,7 +706,10 @@ export class DriveGame {
   private spawnT = 0;
   private pickupT = 5;
   private loadout: Loadout = { battery: 0, magnet: 0, shield: 0, chai: 0, paint: 0x237d33 };
-  private bodyMat!: THREE.MeshLambertMaterial;
+  private bodyMat!: THREE.MeshStandardMaterial;
+  private composer: EffectComposer | null = null;
+  private bloom: UnrealBloomPass | null = null;
+  private envMap: THREE.Texture | null = null;
   private coins = 0;
   private coinT = 3;
   private chaiT = 14;
@@ -738,6 +745,7 @@ export class DriveGame {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.toneMappingExposure = 1.12;
     canvas.addEventListener('webglcontextlost', this.onContextLost as EventListener);
 
     const sky = 0x0d1226;
@@ -748,7 +756,8 @@ export class DriveGame {
     this.scene.add(this.hemi);
     this.sunLight = new THREE.DirectionalLight(0xffd9a0, 0.9);
     this.sunLight.position.set(-20, 40, 30);
-    this.sunLight.shadow.mapSize.set(1024, 1024);
+    this.sunLight.shadow.mapSize.set(2048, 2048);
+    this.sunLight.shadow.radius = 3;
     const sc = this.sunLight.shadow.camera;
     sc.left = -16; sc.right = 16; sc.top = 30; sc.bottom = -45; sc.near = 5; sc.far = 120;
     this.sunLight.shadow.bias = -0.0008;
@@ -844,9 +853,6 @@ export class DriveGame {
     this.shieldMesh.visible = false;
     this.player.add(this.shieldMesh);
 
-    this.chaser = this.f.chaserBus();
-    this.chaser.grp.visible = false;
-    this.scene.add(this.chaser.grp);
 
     this.resize();
     this.resizeObs = new ResizeObserver(() => this.resize());
@@ -924,6 +930,8 @@ export class DriveGame {
     this.textures.forEach((t) => t.dispose());
     this.roadTex.dispose();
     this.fx.dispose();
+    this.composer?.dispose();
+    this.envMap?.dispose();
     this.renderer.dispose();
   }
 
@@ -934,10 +942,42 @@ export class DriveGame {
     this.cb.onError('webgl-context-lost');
   };
 
+  /** high quality: 4x MSAA HDR pipeline with bloom and filmic tone mapping */
+  private buildComposer() {
+    try {
+      const host = this.canvas.parentElement ?? this.canvas;
+      const w = Math.max(1, host.clientWidth);
+      const h = Math.max(1, host.clientHeight);
+      const rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: 4 });
+      const c = new EffectComposer(this.renderer, rt);
+      c.addPass(new RenderPass(this.scene, this.camera));
+      this.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.5, 0.65, 0.88);
+      c.addPass(this.bloom);
+      c.addPass(new OutputPass());
+      c.setSize(w, h);
+      this.composer = c;
+    } catch {
+      this.composer = null;
+    }
+  }
+
   private applyQuality() {
     const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
     const hi = this.quality === 'high';
-    this.renderer.setPixelRatio(hi ? Math.min(dpr, 1.75) : 1);
+    this.renderer.setPixelRatio(hi ? Math.min(dpr, 2) : 1);
+    this.renderer.toneMapping = hi ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
+    if (hi && !this.envMap) {
+      try {
+        const pm = new THREE.PMREMGenerator(this.renderer);
+        this.envMap = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+        pm.dispose();
+      } catch {
+        this.envMap = null;
+      }
+    }
+    this.scene.environment = hi ? this.envMap : null;
+    if (hi && !this.composer) this.buildComposer();
+    if (this.composer) this.composer.setPixelRatio(this.renderer.getPixelRatio());
     if (this.renderer.shadowMap.enabled !== hi) {
       this.renderer.shadowMap.enabled = hi;
       this.scene.traverse((o) => {
@@ -956,6 +996,8 @@ export class DriveGame {
     const w = Math.max(1, host.clientWidth);
     const h = Math.max(1, host.clientHeight);
     this.renderer.setSize(w, h, false);
+    this.composer?.setSize(w, h);
+    this.bloom?.resolution.set(w, h);
     this.camera.aspect = w / h;
     this.baseFov = this.camera.aspect < 1 ? 78 : this.camera.aspect < 1.5 ? 66 : 58;
     this.camera.fov = this.baseFov;
@@ -1335,7 +1377,7 @@ export class DriveGame {
     this.collisions = 0;
     this.damage = 0;
     this.level = 1;
-    this.gap = 24;
+    this.gap = GAP_MAX;
     this.shield = 0;
     this.shieldCd = 0;
     this.invuln = 0;
@@ -1361,7 +1403,6 @@ export class DriveGame {
     this.chaserX = this.px;
     this.player.visible = true;
     this.shieldMesh.visible = false;
-    this.chaser.grp.visible = false;
     // pre-populate the road so it never starts empty
     for (let z = -25; z > -170; z -= rand(22, 36)) this.spawnTraffic(z);
     if (!demo && new URLSearchParams(window.location.search).has('fastchai')) {
@@ -1574,7 +1615,8 @@ export class DriveGame {
     this.timeScale += (1 - this.timeScale) * Math.min(1, 3.5 * dt);
     if (this.mode === 'demo' || this.mode === 'playing') this.step(dt * this.timeScale);
     this.updateVisuals(dt);
-    this.renderer.render(this.scene, this.camera);
+    if (this.composer && this.quality === 'high') this.composer.render(dt);
+    else this.renderer.render(this.scene, this.camera);
   };
 
   private autopilot() {
@@ -1693,13 +1735,6 @@ export class DriveGame {
         this.audio.warn();
       } else if (this.battery > 38) this.lowWarned = false;
 
-      const chaserSpeed = (14 + this.level * 1.6) * D.chaser;
-      this.gap = clamp(this.gap + (this.speed - chaserSpeed) * dt * 0.35, 0, GAP_MAX);
-      if (this.gap < 9 && !this.pursuitWarned) {
-        this.pursuitWarned = true;
-        this.emit('pursuit');
-        this.audio.warn();
-      } else if (this.gap > 15) this.pursuitWarned = false;
     }
 
     /* ---- spawning */
@@ -1921,7 +1956,6 @@ export class DriveGame {
         this.combo = 0;
         this.comboT = 0;
         this.battery -= 4;
-        this.gap = Math.max(0, this.gap - 3);
         this.damage += this.dmg('pedestrian');
         this.shake = 0.4;
         this.emit('pedestrian');
@@ -1947,7 +1981,6 @@ export class DriveGame {
     this.invuln = 1.0;
     this.shake = 0.7;
     this.damage += this.dmg(e.kind);
-    this.gap = Math.max(0, this.gap - 5);
     // shove the other vehicle aside so the same crash is not counted twice
     e.vx = (e.x === this.px ? (Math.random() < 0.5 ? -1 : 1) : Math.sign(e.x - this.px)) * 5;
     if (e.speed > 0) e.speed = Math.max(2, e.speed * 0.7);
@@ -2138,18 +2171,6 @@ export class DriveGame {
       b.w1.rotation.z = flap;
       b.w2.rotation.z = -flap;
       b.grp.rotation.y = -Math.PI / 2;
-    }
-
-    // chaser
-    const showChaser = this.mode !== 'demo' && this.gap < 22;
-    this.chaser.grp.visible = showChaser;
-    if (showChaser) {
-      this.chaserX += (this.px - this.chaserX) * Math.min(1, 2 * dt);
-      // bus front edge stays >= 4.6 behind the player's centre, so it never overlaps the rickshaw
-      this.chaser.grp.position.set(this.chaserX, 0, 9.1 + this.gap * 0.12);
-      const flip = Math.floor(t * 6) % 2 === 0;
-      (this.chaser.l1.material as THREE.MeshBasicMaterial).color.setHex(flip ? 0xff2020 : 0x300000);
-      (this.chaser.l2.material as THREE.MeshBasicMaterial).color.setHex(flip ? 0x001040 : 0x2060ff);
     }
 
     // traffic lights (decorative cycle: 4s green, 1s yellow, 3s red)
