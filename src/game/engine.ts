@@ -124,6 +124,7 @@ interface Entity {
   limbs?: THREE.Object3D[];
   phase: number;
   wheelR: number;
+  cruise: number; // the speed this driver would like to keep (m/s)
 }
 
 const CRASH_BATTERY: Partial<Record<Kind, number>> = { bus: 10, truck: 10, car: 7, cng: 6, bike: 4, rickshaw: 4, barrier: 6, stall: 5 };
@@ -691,6 +692,8 @@ export class DriveGame {
   private beam!: THREE.Mesh;
   private zone = 0;
   private timeScale = 1;
+  private lightState = 0; // 0 green, 1 yellow, 2 red (shared by every signal)
+  private stopZ: number[] = [];
   private hornT = 4;
   private hitRoll = 0;
   private intro = 0;
@@ -778,6 +781,7 @@ export class DriveGame {
     this.addSky();
     this.buildRain();
     this.buildBirds();
+    if (new URLSearchParams(window.location.search).has('debug')) (window as unknown as { __dtc: unknown }).__dtc = this;
 
     // traffic light lamp materials (shared by every gantry)
     this.lampMats = {
@@ -1310,7 +1314,7 @@ export class DriveGame {
     });
     const lampSide = idx % 2;
     seg.lamps.forEach((l, k) => (l.visible = k === lampSide));
-    seg.gantry.visible = Math.random() < 0.16;
+    seg.gantry.visible = Math.random() < 0.2;
     seg.post.visible = Math.random() < 0.35;
     (seg.postPlate.material as THREE.MeshBasicMaterial).map = pick(this.plateTex);
     (seg.postPlate.material as THREE.MeshBasicMaterial).needsUpdate = true;
@@ -1359,7 +1363,7 @@ export class DriveGame {
     this.shieldMesh.visible = false;
     this.chaser.grp.visible = false;
     // pre-populate the road so it never starts empty
-    for (let z = -25; z > -170; z -= rand(12, 22)) this.spawnTraffic(z);
+    for (let z = -25; z > -170; z -= rand(22, 36)) this.spawnTraffic(z);
     if (!demo && new URLSearchParams(window.location.search).has('fastchai')) {
       // testing aid: a chai cup right ahead in the player's lane
       this.ents = this.ents.filter((e) => {
@@ -1448,7 +1452,8 @@ export class DriveGame {
       wheels: b.wheels,
       limbs: b.limbs,
       phase: Math.random() * 6.28,
-      wheelR: b.wheelR ?? 0.4
+      wheelR: b.wheelR ?? 0.4,
+      cruise: speed
     };
     if (kind === 'pedestrian') {
       const side = Math.random() < 0.5 ? -1 : 1;
@@ -1463,7 +1468,7 @@ export class DriveGame {
   }
 
   private spawnTraffic(z = SPAWN_Z - rand(0, 14)) {
-    if (this.ents.length > 42) return;
+    if (this.ents.length > 30) return;
     const lvl = this.level;
     const table: [Kind, number][] = [
       ['car', 30],
@@ -1499,12 +1504,12 @@ export class DriveGame {
 
     const isStatic = kind === 'barrier' || kind === 'pothole' || kind === 'stall';
     for (let attempt = 0; attempt < 4; attempt++) {
-      const gapNeeded = isStatic ? 14 : 18;
+      const gapNeeded = isStatic ? 14 : kind === 'bus' || kind === 'truck' ? 24 : 20;
       let ok = this.laneFree(lane, z, gapNeeded);
       if (ok && isStatic) {
         // never drop a static obstacle in a lane where moving traffic is still behind it
         const lx = LANES[lane];
-        ok = !this.ents.some((e) => e.speed > 0 && Math.abs(e.x - lx) < 1.6 && e.z < -25);
+        ok = !this.ents.some((e) => (e.speed > 0 || e.isVehicle) && Math.abs(e.x - lx) < 1.6 && e.z < -25);
       }
       if (ok) {
         const e = this.makeEntity(kind, lane, z);
@@ -1701,7 +1706,7 @@ export class DriveGame {
     this.spawnT -= dt * (this.speed / 18);
     if (this.spawnT <= 0) {
       this.spawnTraffic();
-      this.spawnT = rand(0.5, 1.0) / (1 + this.level * 0.12) / DIFFICULTY[this.difficulty].traffic;
+      this.spawnT = rand(0.85, 1.6) / (1 + this.level * 0.1) / DIFFICULTY[this.difficulty].traffic;
     }
     this.pickupT -= dt;
     if (this.pickupT <= 0) {
@@ -1727,6 +1732,7 @@ export class DriveGame {
     for (let i = this.ents.length - 1; i >= 0; i--) {
       const e = this.ents[i];
       e.prevZ = e.z;
+      if (e.isVehicle && e.cruise > 0) this.drive(e, dt);
       e.z += (this.speed - e.speed) * dt;
       e.laneChangeCd = Math.max(0, e.laneChangeCd - dt);
       if (e.targetX !== undefined) {
@@ -1778,6 +1784,10 @@ export class DriveGame {
     }
 
     /* ---- scenery */
+    this.stopZ.length = 0;
+    for (const seg of this.segments) {
+      if (seg.gantry.visible) this.stopZ.push(seg.grp.position.z);
+    }
     for (const seg of this.segments) {
       seg.grp.position.z += this.speed * dt;
       if (seg.grp.position.z > 30 + SEG) {
@@ -1805,6 +1815,47 @@ export class DriveGame {
       }
       this.audio.setEngine(this.speed / maxBase, this.boosting, true);
     }
+  }
+
+  /**
+   * Simple driver model for every moving vehicle: keep a safe gap to whoever is ahead
+   * (so nobody drives through another vehicle) and stop at the signal when it is red
+   * (or yellow, if there is room to stop).
+   */
+  private drive(e: Entity, dt: number) {
+    const front = e.z - e.hl;
+    let vdes = e.cruise;
+    let lead: Entity | undefined;
+    let leadGap = Infinity;
+    for (const o of this.ents) {
+      if (o === e || !o.isVehicle || o.z >= e.z) continue;
+      if (Math.abs(o.x - e.x) > (o.hw + e.hw) * 0.95 + 0.1) continue;
+      const gap = front - (o.z + o.hl);
+      if (gap < leadGap) {
+        leadGap = gap;
+        lead = o;
+      }
+    }
+    if (lead && leadGap < 40) {
+      const safe = 2 + e.speed * 0.35;
+      vdes = Math.min(vdes, Math.max(0, lead.speed + (leadGap - safe) * 1.2));
+      if (leadGap < 0.3) {
+        e.z = lead.z + lead.hl + e.hl + 0.3; // never let two vehicles overlap
+        e.speed = Math.min(e.speed, lead.speed);
+      }
+    }
+    if (this.lightState !== 0) {
+      let d = Infinity;
+      for (const gz of this.stopZ) {
+        const dd = front - (gz + 1.2);
+        if (dd >= -1 && dd < d) d = dd;
+      }
+      if (d < 140 && !(this.lightState === 1 && (e.speed * e.speed) / 12 > d)) {
+        vdes = Math.min(vdes, Math.sqrt(9 * Math.max(0, d)));
+      }
+    }
+    const a = vdes < e.speed ? 9 : 3.5;
+    e.speed += Math.max(-a * dt, Math.min(a * dt, vdes - e.speed));
   }
 
   private doHorn() {
@@ -2102,11 +2153,12 @@ export class DriveGame {
     }
 
     // traffic lights (decorative cycle: 4s green, 1s yellow, 3s red)
-    this.lampPhase = (this.lampPhase + dt) % 8;
+    this.lampPhase = (this.lampPhase + dt) % 10;
     const p = this.lampPhase;
-    this.lampMats.green.color.setHex(p < 4 ? 0x2bff6a : 0x053a15);
-    this.lampMats.yellow.color.setHex(p >= 4 && p < 5 ? 0xffd32a : 0x4a3a05);
-    this.lampMats.red.color.setHex(p >= 5 ? 0xff2a2a : 0x3a0808);
+    this.lightState = p < 6 ? 0 : p < 7 ? 1 : 2;
+    this.lampMats.green.color.setHex(p < 6 ? 0x2bff6a : 0x053a15);
+    this.lampMats.yellow.color.setHex(p >= 6 && p < 7 ? 0xffd32a : 0x4a3a05);
+    this.lampMats.red.color.setHex(p >= 7 ? 0xff2a2a : 0x3a0808);
 
     // pickups bob
     for (const e of this.ents) {

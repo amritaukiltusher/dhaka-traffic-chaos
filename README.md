@@ -84,3 +84,7 @@ Traffic wheels spin, vehicles sway and lean into lane changes, pedestrians walk,
 ## Atmosphere
 
 Glowing street lamps and tail lights, rain splashes on the road, smoke and sparks when the battery is low, distant horns from other drivers.
+
+## Traffic rules
+
+Every moving vehicle keeps a safe gap to the one ahead (no more driving through each other) and stops at the signal gantries on red (or yellow when it can stop in time). Signal cycle: 6 s green, 1 s yellow, 3 s red. The road carries fewer vehicles than before. Open the site with `?debug` to expose the engine as `window.__dtc` for testing.
